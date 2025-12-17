@@ -108,6 +108,13 @@ def get_norm_stats(dataset_dir, num_episodes):
     return stats
 
 
+def collate_episodic(batch):
+    images, qposes, actions, pads = zip(*batch)
+    max_len = max(a.shape[0] for a in actions)
+    padded_actions = [torch.cat([a, torch.zeros(max_len - a.shape[0], a.shape[1])], dim=0) for a in actions]
+    padded_pads = [torch.cat([p, torch.ones(max_len - p.shape[0])], dim=0) for p in pads]
+    return torch.stack(images), torch.stack(qposes), torch.stack(padded_actions), torch.stack(padded_pads)
+
 def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val):
     print(f'\nData from: {dataset_dir}\n')
     # obtain train test split
@@ -122,8 +129,8 @@ def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_s
     # construct dataset and dataloader
     train_dataset = EpisodicDataset(train_indices, dataset_dir, camera_names, norm_stats)
     val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, norm_stats)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers=1, prefetch_factor=1)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=1, prefetch_factor=1)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers=1, prefetch_factor=1, collate_fn=collate_episodic)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=1, prefetch_factor=1, collate_fn=collate_episodic)
 
     return train_dataloader, val_dataloader, norm_stats, train_dataset.is_sim
 
