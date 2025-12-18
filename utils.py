@@ -114,10 +114,10 @@ def get_norm_stats(dataset_dir, num_episodes):
     qpos_std = torch.clip(qpos_std, 1e-2, np.inf)  # clipping
 
     stats = {
-        "action_mean": action_mean.numpy().squeeze(),
-        "action_std": action_std.numpy().squeeze(),
-        "qpos_mean": qpos_mean.numpy().squeeze(),
-        "qpos_std": qpos_std.numpy().squeeze(),
+        "action_mean": action_mean.numpy().squeeze().astype(np.float32),
+        "action_std": action_std.numpy().squeeze().astype(np.float32),
+        "qpos_mean": qpos_mean.numpy().squeeze().astype(np.float32),
+        "qpos_std": qpos_std.numpy().squeeze().astype(np.float32),
         "example_qpos": qpos,
     }
 

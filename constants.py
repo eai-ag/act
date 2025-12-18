@@ -31,8 +31,8 @@ SIM_TASK_CONFIGS = {
         'camera_names': ['top']
     },
 
-    'fruits_picking': {
-        'dataset_dir': DATA_DIR + 'data/fruits_picking',
+    'sim_fruits_picking': {
+        'dataset_dir': DATA_DIR + '/fruits_picking',
         'num_episodes': 50,
         'episode_len': 300,  # approximate, but variable
         'camera_names': ['gripper', 'main']
