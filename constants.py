@@ -30,10 +30,17 @@ SIM_TASK_CONFIGS = {
         'episode_len': 500,
         'camera_names': ['top']
     },
+
+    'fruits_picking': {
+        'dataset_dir': DATA_DIR + 'data/fruits_picking',
+        'num_episodes': 50,
+        'episode_len': 300,  # approximate, but variable
+        'camera_names': ['gripper', 'main']
+    },
 }
 
 # DETR State dimension
-STATE_DIM = 14  # Robot state/action dimension (change to 7 for single-arm)
+STATE_DIM = 7  # Robot state/action dimension (change to 7 for single-arm)
 
 ### Simulation envs fixed constants
 DT = 0.02
