@@ -254,7 +254,10 @@ def compute_dict_mean(epoch_dicts):
 def detach_dict(d):
     new_d = dict()
     for k, v in d.items():
-        new_d[k] = v.detach()
+        if k != 'num_valid':
+            new_d[k] = v.detach()
+        else:
+            new_d[k] = v
     return new_d
 
 
