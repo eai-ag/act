@@ -399,6 +399,8 @@ def train_bc(train_dataloader, val_dataloader, config):
 def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
     # save training curves
     for key in train_history[0]:
+        if key == 'num_valid':
+            continue
         plot_path = os.path.join(ckpt_dir, f'train_val_{key}_seed_{seed}.png')
         plt.figure()
         train_values = [summary[key].item() for summary in train_history]
