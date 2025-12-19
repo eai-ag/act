@@ -227,14 +227,28 @@ def sample_insertion_pose():
 
 
 def compute_dict_mean(epoch_dicts):
-    result = {k: None for k in epoch_dicts[0]}
-    num_items = len(epoch_dicts)
-    for k in result:
-        value_sum = 0
-        for epoch_dict in epoch_dicts:
-            value_sum += epoch_dict[k]
-        result[k] = value_sum / num_items
-    return result
+    first_dict = epoch_dicts[0]
+    if 'num_valid' in first_dict:
+        # Weighted average using 'num_valid' as weights
+        total_weight = sum(d['num_valid'] for d in epoch_dicts)
+        assert total_weight > 0, "All batches have 0 valid elements; check data integrity"
+        result = {}
+        for k in first_dict:
+            if k == 'num_valid':
+                continue
+            weighted_sum = sum(d[k] * d['num_valid'] for d in epoch_dicts)
+            result[k] = weighted_sum / total_weight
+        return result
+    else:
+        # Equal-weight average (fallback for CNNMLP/other)
+        result = {k: None for k in first_dict}
+        num_items = len(epoch_dicts)
+        for k in result:
+            value_sum = 0
+            for epoch_dict in epoch_dicts:
+                value_sum += epoch_dict[k]
+            result[k] = value_sum / num_items
+        return result
 
 
 def detach_dict(d):
