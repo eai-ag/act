@@ -264,3 +264,67 @@ def detach_dict(d):
 def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+
+class TemporalEnsembler:
+    def __init__(
+        self,
+        chunk_size,
+        action_dim,
+        decay_rate=0.01,
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    ):
+        """
+        chunk_size (k): The number of future actions predicted per query.
+                         This also defines the history window length.
+        """
+        self.k = chunk_size
+        self.action_dim = action_dim
+
+        # Precompute weights: Newer chunks have higher weight
+        # time_steps_since_prediction: 0 (newest) -> high weight, k-1 (oldest) -> low weight
+        time_steps_since_prediction = torch.arange(self.k, device=device)
+        weights = torch.exp(-decay_rate * time_steps_since_prediction)
+
+        # Normalize weights so they sum to 1.0 for a true weighted average
+        self.normalized_weights = (weights / weights.sum()).unsqueeze(-1)  # (k, 1)
+
+        # This buffer stores the 'k' most recent predicted chunks.
+        # Shape: (number_of_chunks, steps_per_chunk, action_dimensions)
+        self.chunk_buffer = torch.zeros(
+            (self.k, self.k, self.action_dim), device=device
+        )
+
+        self.current_ptr = 0  # Tracks which slot in the buffer to overwrite
+
+    def get_ensembled_action(self, predicted_chunk):
+        """
+        predicted_chunk: The (k, action_dim) output from the Transformer at the current time.
+        """
+        # 1. Store the newest prediction in our circular buffer
+        self.chunk_buffer[self.current_ptr] = predicted_chunk
+
+        # 2. Identify the indices for the "Vertical Slice"
+        # We need the 1st action from the newest chunk,
+        # the 2nd action from the chunk predicted 1 step ago, etc.
+
+        # 'chunk_indices' looks back in time: [current, current-1, current-2, ...]
+        chunk_indices = (self.current_ptr - torch.arange(self.k)) % self.k
+
+        # 'action_indices' looks forward in the chunk: [0, 1, 2, ..., k-1]
+        action_indices = torch.arange(self.k)
+
+        # 3. Extract the window of relevant actions
+        # This gathers one action from each of the 'k' chunks in the buffer.
+        action_window = self.chunk_buffer[
+            chunk_indices, action_indices
+        ]  # (k, action_dim)
+
+        # 4. Compute the final action via weighted average
+        # Higher weight is given to the action from the most recent chunk (index 0)
+        final_action = torch.sum(action_window * self.normalized_weights, dim=0)
+
+        # 5. Advance the pointer for the next time step
+        self.current_ptr = (self.current_ptr + 1) % self.k
+
+        return final_action
