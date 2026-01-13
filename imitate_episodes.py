@@ -16,6 +16,9 @@ from utils import compute_dict_mean, set_seed, detach_dict # helper functions
 from policy import ACTPolicy, CNNMLPPolicy
 from visualize_episodes import save_videos
 
+from torch.utils.tensorboard import SummaryWriter
+from tensorboard import program
+
 from sim_env import BOX_POSE
 
 import IPython
@@ -108,6 +111,13 @@ def main(args):
     stats_path = os.path.join(ckpt_dir, f'dataset_stats.pkl')
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
+
+    # Launch TensorBoard programmatically (accessible remotely via Zerotier)
+    log_dir = os.path.join(ckpt_dir, 'tensorboard')
+    tb = program.TensorBoard()
+    tb.configure(argv=[None, '--logdir', log_dir, '--bind_all'])
+    url = tb.launch()
+    print(f"TensorBoard started at {url} (also accessible at http://10.99.2.64:6006/ on Zerotier network)")
 
     best_ckpt_info = train_bc(train_dataloader, val_dataloader, config)
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
@@ -328,6 +338,8 @@ def train_bc(train_dataloader, val_dataloader, config):
 
     set_seed(seed)
 
+    writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'tensorboard'))
+
     policy = make_policy(policy_class, policy_config)
     policy.cuda()
     optimizer = make_optimizer(policy_class, policy)
@@ -358,6 +370,10 @@ def train_bc(train_dataloader, val_dataloader, config):
             summary_string += f'{k}: {v.item():.3f} '
         print(summary_string)
 
+        # Log to TensorBoard
+        writer.add_scalars('Total_Loss', {'val': epoch_val_loss.item()}, epoch)
+        writer.add_scalars('Component_Loss_val', {'l1': epoch_summary['l1'].item(), 'kl_weighted': (epoch_summary['kl'] * policy.kl_weight).item()}, epoch)
+
         # training
         policy.train()
         optimizer.zero_grad()
@@ -377,6 +393,9 @@ def train_bc(train_dataloader, val_dataloader, config):
             summary_string += f'{k}: {v.item():.3f} '
         print(summary_string)
 
+        # Log to TensorBoard
+        writer.add_scalars('Total_Loss', {'train': epoch_train_loss.item()}, epoch)
+
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
@@ -392,6 +411,8 @@ def train_bc(train_dataloader, val_dataloader, config):
 
     # save training curves
     plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
+
+    writer.close()
 
     return best_ckpt_info
 
