@@ -49,7 +49,7 @@ class RoslibpyInference:
         # Temporal ensembling setup
         self.num_queries = policy_config["num_queries"]
         self.ensembler = TemporalEnsembler(
-            chunk_size=self.num_queries, action_dim=7, device=self.device
+            chunk_size=self.num_queries, action_dim=7, device=self.device, decay_rate=0.05
         )
 
         # Publishers
@@ -216,7 +216,7 @@ class RoslibpyInference:
         # Publish
         joint_state = {
             "header": {"stamp": roslibpy.Time.now(), "frame_id": "world"},
-            "name": ["joint_" + str(i) for i in range(7)],
+            "name": ["piper_1", "piper_2", "piper_3", "piper_4", "piper_5", "piper_6", "gripper_1"],
             "position": action.tolist(),
             "velocity": [],
             "effort": [],
