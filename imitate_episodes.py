@@ -396,7 +396,7 @@ def train_bc(train_dataloader, val_dataloader, config):
         # Log to TensorBoard
         writer.add_scalars('Total_Loss', {'train': epoch_train_loss.item()}, epoch)
 
-        if epoch % 100 == 0:
+        if epoch % 500 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
             plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
