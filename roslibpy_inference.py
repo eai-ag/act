@@ -17,7 +17,7 @@ from utils import TemporalEnsembler
 
 
 class RoslibpyInference:
-    def __init__(self, host="localhost", port=9091):
+    def __init__(self, host="localhost", port=9090):
         self.client = roslibpy.Ros(host=host, port=port)
         self.client.run()
 
@@ -25,7 +25,7 @@ class RoslibpyInference:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Paths
-        ckpt_dir = "/home/eai/act/data/checkpoints/fruits_picking"
+        ckpt_dir = "/home/eai/act/data/checkpoints/tomato_picking"
         config_path = os.path.join(ckpt_dir, "config.yaml")
         ckpt_path = os.path.join(ckpt_dir, "policy_best.ckpt")
         stats_path = os.path.join(ckpt_dir, "dataset_stats.pkl")
@@ -49,7 +49,7 @@ class RoslibpyInference:
         # Temporal ensembling setup
         self.num_queries = policy_config["num_queries"]
         self.ensembler = TemporalEnsembler(
-            chunk_size=self.num_queries, action_dim=7, device=self.device, decay_rate=0.05
+            chunk_size=self.num_queries, action_dim=7, device=self.device, decay_rate=0.2
         )
 
         # Publishers
