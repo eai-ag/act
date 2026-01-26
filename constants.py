@@ -37,7 +37,15 @@ SIM_TASK_CONFIGS = {
         'episode_len': 300,  # approximate, but variable
         'camera_names': ['gripper', 'main']
     },
+    
+    'sim_tomato_picking': {
+        'dataset_dir': DATA_DIR + '/tomato_picking',
+        'num_episodes': 300,
+        'episode_len': 300,  # approximate, but variable
+        'camera_names': ['gripper', 'main']
+    },
 }
+
 
 # DETR State dimension
 STATE_DIM = 7  # Robot state/action dimension (change to 7 for single-arm)
