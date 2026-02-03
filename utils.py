@@ -132,7 +132,8 @@ def collate_episodic(batch):
         for a in actions
     ]
     padded_pads = [
-        torch.cat([p, torch.ones(max_len - p.shape[0], dtype=torch.bool)], dim=0) for p in pads
+        torch.cat([p, torch.ones(max_len - p.shape[0], dtype=torch.bool)], dim=0)
+        for p in pads
     ]
     return (
         torch.stack(images),
@@ -228,15 +229,17 @@ def sample_insertion_pose():
 
 def compute_dict_mean(epoch_dicts):
     first_dict = epoch_dicts[0]
-    if 'num_valid' in first_dict:
+    if "num_valid" in first_dict:
         # Weighted average using 'num_valid' as weights
-        total_weight = sum(d['num_valid'] for d in epoch_dicts)
-        assert total_weight > 0, "All batches have 0 valid elements; check data integrity"
+        total_weight = sum(d["num_valid"] for d in epoch_dicts)
+        assert (
+            total_weight > 0
+        ), "All batches have 0 valid elements; check data integrity"
         result = {}
         for k in first_dict:
-            if k == 'num_valid':
+            if k == "num_valid":
                 continue
-            weighted_sum = sum(d[k] * d['num_valid'] for d in epoch_dicts)
+            weighted_sum = sum(d[k] * d["num_valid"] for d in epoch_dicts)
             result[k] = weighted_sum / total_weight
         return result
     else:
@@ -254,7 +257,7 @@ def compute_dict_mean(epoch_dicts):
 def detach_dict(d):
     new_d = dict()
     for k, v in d.items():
-        if k != 'num_valid':
+        if k != "num_valid":
             new_d[k] = v.detach()
         else:
             new_d[k] = v
@@ -327,4 +330,77 @@ class TemporalEnsembler:
         # 5. Advance the pointer for the next time step
         self.current_ptr = (self.current_ptr + 1) % self.k
 
+        return final_action
+
+
+class TemporalProlepticEnsembler:
+    def __init__(
+        self,
+        chunk_size,
+        action_dim,
+        decay_rate=0.01,
+        proleptic_offset=0,
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    ):
+        self.k = chunk_size
+        self.action_dim = action_dim
+        self.f = proleptic_offset
+        self.effective_k = self.k - self.f
+        assert 0 <= proleptic_offset < chunk_size, f"proleptic_offset must be in [0, {chunk_size}), got {proleptic_offset}"
+
+        # Precompute weights for the effective window only
+        time_steps_since_prediction = torch.arange(self.effective_k, device=device)
+        weights = torch.exp(-decay_rate * time_steps_since_prediction)
+        self.normalized_weights = (weights / weights.sum()).unsqueeze(-1)
+
+        self.chunk_buffer = torch.zeros(
+            (self.k, self.k, self.action_dim), device=device
+        )
+        self.current_ptr = 0
+
+    def get_ensembled_action(self, predicted_chunk):
+        self.chunk_buffer[self.current_ptr] = predicted_chunk
+
+        # Identifies past chunks in circular buffer
+        chunk_indices = (self.current_ptr - torch.arange(self.effective_k)) % self.k
+
+        # Shift selection to future actions [f, f+1, ... k-1]
+        action_indices = torch.arange(self.f, self.k)  #
+
+        # Extract the proleptic vertical slice (actions for t+f)
+        action_window = self.chunk_buffer[chunk_indices, action_indices]
+
+        # Weighted average
+        final_action = torch.sum(action_window * self.normalized_weights, dim=0)
+
+        self.current_ptr = (self.current_ptr + 1) % self.k
+        return final_action
+
+
+def get_ensembled_action(self, predicted_chunk):
+        self.chunk_buffer[self.current_ptr] = predicted_chunk
+
+        # 1. How many chunks are we looking back?
+        # Only chunks that actually contain the target time t+f.
+        # This corresponds to the (k-f) chunks predicted from (t - (k-f) + 1) to t.
+        num_chunks = self.effective_k 
+
+        # 2. Identify which slots in the circular buffer these chunks are in
+        # (Look back from current_ptr)
+        chunk_indices = (self.current_ptr - torch.arange(num_chunks)) % self.k
+
+        # 3. CRITICAL FIX: Identify the CORRECT local index for each chunk
+        # Chunk 0 (newest, predicted at 't'): needs local index 'f'
+        # Chunk 1 (predicted at 't-1'): needs local index 'f+1'
+        # Chunk 2 (predicted at 't-2'): needs local index 'f+2'
+        action_indices = torch.arange(self.f, self.k)
+
+        # 4. Extract the specific (row, col) pairs
+        # This gathers chunk_buffer[chunk_indices[0], action_indices[0]], etc.
+        action_window = self.chunk_buffer[chunk_indices, action_indices] # (effective_k, action_dim)
+
+        # 5. Weighted average
+        final_action = torch.sum(action_window * self.normalized_weights, dim=0)
+
+        self.current_ptr = (self.current_ptr + 1) % self.k
         return final_action

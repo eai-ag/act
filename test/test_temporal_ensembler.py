@@ -4,7 +4,7 @@ import numpy as np
 import sys
 
 sys.path.insert(0, "/home/eai/act")
-from utils import TemporalEnsembler
+from utils import TemporalEnsembler, TemporalProlepticEnsembler
 
 
 class TestTemporalEnsembler(unittest.TestCase):
@@ -231,6 +231,142 @@ class TestTemporalEnsembler(unittest.TestCase):
             msg=f"Raw action {raw_action.squeeze().item():.3f} should match expected {expected_raw_action.squeeze().item():.3f}",
         )
         print(f"✓ Raw action from eval code matches expected")
+
+
+class TestTemporalProlepticEnsembler(unittest.TestCase):
+
+    def setUp(self):
+        self.action_dim = 2
+        self.num_timesteps = 10
+        self.k = 3  # chunk_size
+        self.f = 1  # proleptic_offset
+        self.decay_rate = 0.01
+
+    def _run_test_for_device(self, device):
+        # 1. Setup Ensembler with k=3, f=1
+        ensembler = TemporalProlepticEnsembler(
+            chunk_size=self.k,
+            action_dim=self.action_dim,
+            decay_rate=self.decay_rate,
+            proleptic_offset=self.f,
+            device=device,
+        )
+
+        # 2. Generate chunks
+        chunks = [
+            torch.randn(self.k, self.action_dim, device=device)
+            for _ in range(self.num_timesteps)
+        ]
+
+        ensembler_actions = []
+        for chunk in chunks:
+            action = ensembler.get_ensembled_action(chunk)
+            ensembler_actions.append(action)
+
+        # 3. Manual Ground Truth Logic for k=3, f=1
+        eval_actions = []
+        effective_k = self.k - self.f
+        history = []
+
+        for t in range(self.num_timesteps):
+            history.append(chunks[t])
+
+            actions_at_target = []
+            for i in range(effective_k):
+                lookback_idx = t - i
+                if lookback_idx >= 0:
+                    local_action_idx = self.f + i  # f=1, then f+1=2
+                    actions_at_target.append(history[lookback_idx][local_action_idx])
+
+            actions_at_target = torch.stack(actions_at_target)
+
+            # Recompute weights for the slice length (max 2)
+            num_available = actions_at_target.size(0)
+            weights = torch.exp(
+                -self.decay_rate * torch.arange(num_available, device=device)
+            )
+            weights = weights / weights.sum()
+
+            raw_action = (actions_at_target * weights.unsqueeze(-1)).sum(dim=0)
+            eval_actions.append(raw_action)
+
+        # 4. Assert Match
+        for t in range(effective_k - 1, self.num_timesteps):
+            self.assertTrue(
+                torch.allclose(
+                    ensembler_actions[t], eval_actions[t], rtol=1e-5, atol=1e-6
+                ),
+                f"Mismatch at t={t}: ensembler={ensembler_actions[t]}, eval={eval_actions[t]}",
+            )
+        print(f"✓ Proleptic match (k=3, f=1) successful on {device}")
+
+    def test_logic_k3_f1_with_c2(self):
+        """Hardcoded verification for k=3, f=1, including the third step c2."""
+        device = torch.device("cpu")
+        ensembler = TemporalProlepticEnsembler(
+            chunk_size=3, action_dim=1, proleptic_offset=1, device=device
+        )
+
+        # Chunk structure: [prediction for step +0, +1, +2]
+        c0 = torch.tensor([[0.0], [0.1], [0.2]])
+        c1 = torch.tensor([[1.0], [1.1], [1.2]])
+        c2 = torch.tensor([[2.0], [2.1], [2.2]])
+
+        # --- Step 0 ---
+        _ = ensembler.get_ensembled_action(c0)
+
+        # --- Step 1 (Ensembling for time t=1) ---
+        actual_t1 = ensembler.get_ensembled_action(c1)
+        # Vertical Slice at t=1: [c1[1], c0[2]] -> [1.1, 0.2]
+        slice_t1 = torch.tensor([[1.1], [0.2]])
+        weights = ensembler.normalized_weights
+        expected_t1 = (slice_t1 * weights).sum().item()
+
+        self.assertAlmostEqual(actual_t1.item(), expected_t1, places=5)
+        print(f"✓ Step 1 passed: Slice was {slice_t1.flatten().tolist()}")
+
+        # --- Step 2 (Ensembling for time t=2) ---
+        actual_t2 = ensembler.get_ensembled_action(c2)
+        # Vertical Slice at t=2: [c2[1], c1[2]] -> [2.1, 1.2]
+        # Note: c0[3] doesn't exist, so c0 is dropped from the average.
+        slice_t2 = torch.tensor([[2.1], [1.2]])
+        expected_t2 = (slice_t2 * weights).sum().item()
+
+        self.assertAlmostEqual(actual_t2.item(), expected_t2, places=5)
+        print(f"✓ Step 2 passed: Slice was {slice_t2.flatten().tolist()}")
+
+    def test_cpu(self):
+        self._run_test_for_device(torch.device("cpu"))
+
+    def test_cuda(self):
+        if torch.cuda.is_available():
+            self._run_test_for_device(torch.device("cuda"))
+
+    def test_compare_with_standard_when_f_is_zero(self):
+        device = torch.device("cuda")
+        k, action_dim = 5, 4
+
+        standard = TemporalEnsembler(chunk_size=k, action_dim=action_dim, device=device)
+        proleptic = TemporalProlepticEnsembler(
+            chunk_size=k, action_dim=action_dim, proleptic_offset=0, device=device
+        )
+
+        # Ensure weights are identical
+        self.assertTrue(
+            torch.allclose(standard.normalized_weights, proleptic.normalized_weights)
+        )
+
+        # Feed a sequence of random chunks
+        for _ in range(10):
+            chunk = torch.randn(k, action_dim, device=device)
+            out_standard = standard.get_ensembled_action(chunk)
+            out_proleptic = proleptic.get_ensembled_action(chunk)
+
+            self.assertTrue(
+                torch.allclose(out_standard, out_proleptic, atol=1e-7),
+                "Output mismatch between standard and proleptic (f=0) ensemblers",
+            )
+        print("✓ Comparison test passed: Proleptic(f=0) == Standard")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ import base64
 
 # Import ACT code
 from policy import ACTPolicy
-from utils import TemporalEnsembler
+from utils import TemporalProlepticEnsembler
 
 
 class RoslibpyInference:
@@ -48,14 +48,19 @@ class RoslibpyInference:
 
         # Temporal ensembling setup
         self.num_queries = policy_config["num_queries"]
-        self.ensembler = TemporalEnsembler(
-            chunk_size=self.num_queries, action_dim=7, device=self.device, decay_rate=0.2
+
+        self.ensembler = TemporalProlepticEnsembler(
+            chunk_size=self.num_queries,
+            action_dim=7,
+            device=self.device,
+            decay_rate=0.13,
+            proleptic_offset=5,
         )
 
         # Publishers
         self.action_pub = roslibpy.Topic(
             self.client,
-            "/left/leader_arm_control_node/commands",
+            "/left/policy/commands",
             "sensor_msgs/msg/JointState",
         )
 
@@ -143,7 +148,7 @@ class RoslibpyInference:
             )
 
             times = [piper_time, gripper_joint_time, main_time, gripper_time, pace_time]
-            if max(times) - min(times) <= 1./15.:  # control freq is 15Hz
+            if max(times) - min(times) <= 1.0 / 15.0:  # control freq is 15Hz
                 self.run_inference(
                     self.latest_piper,
                     self.latest_gripper_joint,
@@ -155,11 +160,16 @@ class RoslibpyInference:
         """Decompress CompressedImage to RGB numpy array."""
         fmt = msg["format"].lower()
         if "jpeg" in fmt:
-            img = cv2.imdecode(np.frombuffer(base64.b64decode(msg["data"]), np.uint8), cv2.IMREAD_COLOR)
+            img = cv2.imdecode(
+                np.frombuffer(base64.b64decode(msg["data"]), np.uint8), cv2.IMREAD_COLOR
+            )
             if "bgr8" in fmt:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         elif "png" in fmt:
-            img = cv2.imdecode(np.frombuffer(base64.b64decode(msg["data"]), np.uint8), cv2.IMREAD_UNCHANGED)
+            img = cv2.imdecode(
+                np.frombuffer(base64.b64decode(msg["data"]), np.uint8),
+                cv2.IMREAD_UNCHANGED,
+            )
             if img.shape[2] == 4:
                 img = img[:, :, :3]
             if "bgr8" in fmt:
@@ -216,7 +226,15 @@ class RoslibpyInference:
         # Publish
         joint_state = {
             "header": {"stamp": roslibpy.Time.now(), "frame_id": "world"},
-            "name": ["piper_1", "piper_2", "piper_3", "piper_4", "piper_5", "piper_6", "gripper_1"],
+            "name": [
+                "piper_1",
+                "piper_2",
+                "piper_3",
+                "piper_4",
+                "piper_5",
+                "piper_6",
+                "gripper_1",
+            ],
             "position": action.tolist(),
             "velocity": [],
             "effort": [],
