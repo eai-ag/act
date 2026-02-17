@@ -1,0 +1,23 @@
+# RL Configuration for Reward and Value Computation
+
+# Data directory
+data_dir: "/home/eai/act/data/tomato_picking"
+
+# RL Hyperparameters
+rl_params:
+  gamma: 0.99
+  gae_lambda: 0.95
+
+# Reward pipeline definitions
+reward_pipeline:
+  - name: "time_penalty"
+    weight: -1.0
+
+# What to write to HDF5 in step 1 (value target computation)
+step1_write_to_disk:
+  - "rew_total"
+  - "v_target"
+
+# What to write to HDF5 in step 2 (advantage computation)
+step2_write_to_disk:
+  - "advantage"
